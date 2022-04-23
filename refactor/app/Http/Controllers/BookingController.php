@@ -2,9 +2,11 @@
 
 namespace DTApi\Http\Controllers;
 
+use App\Http\Requests\JobRequestModel;
 use DTApi\Models\Job;
 use DTApi\Http\Requests;
 use DTApi\Models\Distance;
+use DTApi\Repository\JobRepository;
 use Illuminate\Http\Request;
 use DTApi\Repository\BookingRepository;
 
@@ -20,13 +22,16 @@ class BookingController extends Controller
      */
     protected $repository;
 
+    private JobRepository $jobRepository;
+
     /**
      * BookingController constructor.
      * @param BookingRepository $bookingRepository
      */
-    public function __construct(BookingRepository $bookingRepository)
+    public function __construct(BookingRepository $bookingRepository, JobRepository $jobRepository)
     {
         $this->repository = $bookingRepository;
+        $this->jobRepository = $jobRepository;
     }
 
     /**
@@ -192,66 +197,45 @@ class BookingController extends Controller
         return response($response);
     }
 
-    public function distanceFeed(Request $request)
+    public function distanceFeed(BookingSaveRequest $request)
     {
-        $data = $request->all();
-
-        if (isset($data['distance']) && $data['distance'] != "") {
-            $distance = $data['distance'];
-        } else {
-            $distance = "";
-        }
-        if (isset($data['time']) && $data['time'] != "") {
-            $time = $data['time'];
-        } else {
-            $time = "";
-        }
-        if (isset($data['jobid']) && $data['jobid'] != "") {
-            $jobid = $data['jobid'];
+        if ($this->shouldUpdateDistance($request)) {
+            $this->distanceRepository->update($distance, $time);
         }
 
-        if (isset($data['session_time']) && $data['session_time'] != "") {
-            $session = $data['session_time'];
-        } else {
-            $session = "";
+        if ($this->shouldUpdateJob($request)) {
+            $jobModel = new JobRequestModel($request);
+            $this->jobRepository->update($jobModel);
         }
 
-        if ($data['flagged'] == 'true') {
-            if($data['admincomment'] == '') return "Please, add comment";
-            $flagged = 'yes';
-        } else {
-            $flagged = 'no';
+        return redirect()
+            ->with('Record updated!');
+    }
+
+    private function shouldUpdateDistance(Request $request): bool
+    {
+        if (!empty($request->get('distance')) && !empty($request->get('time'))) {
+            return true;
         }
+
+        return false;
+    }
+
+    private function shouldUpdateJob($request): bool
+    {
+        $fields = ['jobid', 'session_time', 'admincomment'];
         
-        if ($data['manually_handled'] == 'true') {
-            $manually_handled = 'yes';
-        } else {
-            $manually_handled = 'no';
+        return $this->validateRequestHasAtleastOneParameters($request, $fields);
+    }
+
+    private function validateRequestHasAtleastOneParameter(Request $request, array $fields): bool
+    {
+        foreach ($fields as $field) {
+            if (!empty($request->get($field))) {
+                return true;
+            }
         }
-
-        if ($data['by_admin'] == 'true') {
-            $by_admin = 'yes';
-        } else {
-            $by_admin = 'no';
-        }
-
-        if (isset($data['admincomment']) && $data['admincomment'] != "") {
-            $admincomment = $data['admincomment'];
-        } else {
-            $admincomment = "";
-        }
-        if ($time || $distance) {
-
-            $affectedRows = Distance::where('job_id', '=', $jobid)->update(array('distance' => $distance, 'time' => $time));
-        }
-
-        if ($admincomment || $session || $flagged || $manually_handled || $by_admin) {
-
-            $affectedRows1 = Job::where('id', '=', $jobid)->update(array('admin_comments' => $admincomment, 'flagged' => $flagged, 'session_time' => $session, 'manually_handled' => $manually_handled, 'by_admin' => $by_admin));
-
-        }
-
-        return response('Record updated!');
+        return false;
     }
 
     public function reopen(Request $request)
